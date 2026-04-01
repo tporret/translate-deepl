@@ -8,6 +8,7 @@ if (! defined('ABSPATH')) {
 }
 
 use TranslateDeepL\Admin\SettingsPage;
+use TranslateDeepL\Admin\TemplateManagerPage;
 use TranslateDeepL\Admin\PostMetaBox;
 use TranslateDeepL\Admin\TranslatedContentAdmin;
 use TranslateDeepL\Api\ApiClientInterface;
@@ -22,6 +23,7 @@ use TranslateDeepL\Repository\SettingsRepository;
 use TranslateDeepL\Routing\LanguageRouter;
 use TranslateDeepL\Service\BlockProcessor;
 use TranslateDeepL\Service\PostTranslator;
+use TranslateDeepL\Service\SyncManager;
 
 final class Plugin
 {
@@ -117,6 +119,15 @@ final class Plugin
         );
 
         $this->container->singleton(
+            SyncManager::class,
+            static fn (Container $container): SyncManager => new SyncManager(
+                $container->get(JobManager::class),
+                $container->get(SettingsRepository::class),
+                $container->get(PostRelationRepository::class)
+            )
+        );
+
+        $this->container->singleton(
             JobManager::class,
             static fn (Container $container): JobManager => new JobManager(
                 $container->get(PostTranslator::class)
@@ -134,7 +145,18 @@ final class Plugin
 
         $this->container->singleton(
             SettingsPage::class,
-            static fn (): SettingsPage => new SettingsPage()
+            static fn (Container $container): SettingsPage => new SettingsPage(
+                $container->get(SettingsRepository::class)
+            )
+        );
+
+        $this->container->singleton(
+            TemplateManagerPage::class,
+            static fn (Container $container): TemplateManagerPage => new TemplateManagerPage(
+                $container->get(SettingsRepository::class),
+                $container->get(PostRelationRepository::class),
+                $container->get(JobManager::class)
+            )
         );
 
         $this->container->singleton(
@@ -178,8 +200,10 @@ final class Plugin
     public function onPluginsLoaded(): void
     {
         $this->container->get(JobManager::class)->registerHooks();
+        $this->container->get(SyncManager::class)->registerHooks();
         $this->container->get(Sweeper::class)->registerHooks();
         $this->container->get(SettingsPage::class)->registerHooks();
+        $this->container->get(TemplateManagerPage::class)->registerHooks();
         $this->container->get(PostMetaBox::class)->registerHooks();
         $this->container->get(TranslatedContentAdmin::class)->registerHooks();
         $this->container->get(LanguageRouter::class)->registerHooks();

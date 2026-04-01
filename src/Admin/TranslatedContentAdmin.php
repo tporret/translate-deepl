@@ -95,7 +95,7 @@ final class TranslatedContentAdmin
         ];
 
         $views['deepl_all'] = sprintf(
-            '<a href="%s" class="%s">All</a>',
+            '<a href="%s" class="%s">All DeepL</a>',
             esc_url($links['all']),
             $currentSet === 'all' ? 'current' : ''
         );

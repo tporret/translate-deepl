@@ -81,6 +81,14 @@ final class Sweeper
     {
         $postsTable = $this->wpdb->posts;
         $relationsTable = $this->getRelationsTableName();
+        $supportedPostTypes = $this->settingsRepository->getSupportedPostTypes();
+
+        if ($supportedPostTypes === []) {
+            return [];
+        }
+
+        $postTypePlaceholders = implode(', ', array_fill(0, count($supportedPostTypes), '%s'));
+        $prepareArgs = array_merge([$langCode], $supportedPostTypes);
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Table names cannot be passed as placeholders.
         $query = $this->wpdb->prepare(
@@ -92,10 +100,10 @@ final class Sweeper
                         LEFT JOIN {$relationsTable} rel_as_translated
                                 ON rel_as_translated.translated_post_id = posts.ID
             WHERE posts.post_status = 'publish'
-              AND posts.post_type IN ('post', 'page')
+                            AND posts.post_type IN ({$postTypePlaceholders})
                             AND rel_by_language.id IS NULL
-                            AND rel_as_translated.id IS NULL",
-            $langCode
+                                                        AND rel_as_translated.id IS NULL",
+                        ...$prepareArgs
         );
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- Query is prepared immediately above.

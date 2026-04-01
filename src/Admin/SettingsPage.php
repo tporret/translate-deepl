@@ -7,6 +7,8 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
+use TranslateDeepL\Repository\SettingsRepository;
+
 final class SettingsPage
 {
     private const PAGE_SLUG = 'translate-deepl';
@@ -21,6 +23,10 @@ final class SettingsPage
         'fr' => 'French',
         'de' => 'German',
     ];
+
+    public function __construct(private readonly SettingsRepository $settingsRepository)
+    {
+    }
 
     public function registerHooks(): void
     {
@@ -321,6 +327,8 @@ final class SettingsPage
         echo '</tbody>';
         echo '</table>';
 
+        $this->renderDebugSection();
+
         echo '<h3>Recent Sweeper Runs (Last 20)</h3>';
 
         if ($logs === []) {
@@ -376,5 +384,22 @@ final class SettingsPage
         }
 
         return wp_date('Y-m-d H:i:s', (int) $next) . ' (' . wp_timezone_string() . ')';
+    }
+
+    private function renderDebugSection(): void
+    {
+        $supportedPostTypes = $this->settingsRepository->getSupportedPostTypes();
+
+        echo '<h3>Debug</h3>';
+        echo '<table class="widefat striped" style="max-width: 900px; margin-bottom: 16px;">';
+        echo '<tbody>';
+
+        printf(
+            '<tr><th style="width: 220px;">Supported Post Types</th><td>%s</td></tr>',
+            esc_html($supportedPostTypes !== [] ? implode(', ', $supportedPostTypes) : 'None')
+        );
+
+        echo '</tbody>';
+        echo '</table>';
     }
 }

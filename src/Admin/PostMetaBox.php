@@ -14,7 +14,7 @@ use TranslateDeepL\Repository\SettingsRepository;
 final class PostMetaBox
 {
     private const ACTION = 'deepl_trigger_translation';
-    private const NONCE_ACTION = 'deepl_trigger_translation_nonce';
+    private const NONCE_ACTION = 'deepl_trigger_translation';
     private const META_BOX_ID = 'translate_deepl_metabox';
 
     /**
@@ -41,11 +41,13 @@ final class PostMetaBox
 
     public function registerMetaBox(): void
     {
+        $supportedPostTypes = $this->settingsRepository->getSupportedPostTypes();
+
         add_meta_box(
             self::META_BOX_ID,
             'Translate DeepL',
             [$this, 'render'],
-            ['post', 'page'],
+            $supportedPostTypes,
             'side',
             'default'
         );
@@ -71,14 +73,30 @@ final class PostMetaBox
 
             if ($translatedPostId !== null) {
                 $editUrl = get_edit_post_link($translatedPostId, '');
+                $syncUrl = wp_nonce_url(
+                    add_query_arg(
+                        [
+                            'action' => self::ACTION,
+                            'post_id' => (string) $post->ID,
+                            'lang' => $languageCode,
+                        ],
+                        admin_url('admin-post.php')
+                    ),
+                    self::NONCE_ACTION
+                );
 
                 if (is_string($editUrl) && $editUrl !== '') {
                     printf(
-                        '<a href="%s">Edit</a>',
+                        '<a href="%s">Edit</a> <a class="button button-secondary button-small" href="%s">Sync Update</a>',
                         esc_url($editUrl)
+                        ,
+                        esc_url($syncUrl)
                     );
                 } else {
-                    echo 'Translation exists';
+                    printf(
+                        'Translation exists <a class="button button-secondary button-small" href="%s">Sync Update</a>',
+                        esc_url($syncUrl)
+                    );
                 }
             } else {
                 $triggerUrl = wp_nonce_url(

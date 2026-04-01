@@ -9,6 +9,40 @@ if (! defined('ABSPATH')) {
 
 final class SettingsRepository
 {
+    /**
+     * @return array<int, string>
+     */
+    public function getSupportedPostTypes(): array
+    {
+        $defaults = ['post', 'page', 'wp_template', 'wp_template_part'];
+
+        $value = apply_filters('deepl_supported_post_types', $defaults);
+
+        if (! is_array($value)) {
+            return $defaults;
+        }
+
+        $types = [];
+
+        foreach ($value as $item) {
+            $type = sanitize_key((string) $item);
+
+            if ($type === '') {
+                continue;
+            }
+
+            $types[] = $type;
+        }
+
+        $types = array_values(array_unique($types));
+
+        if ($types === []) {
+            return $defaults;
+        }
+
+        return $types;
+    }
+
     public function getApiKey(): string
     {
         return (string) get_option('deepl_api_key', '');

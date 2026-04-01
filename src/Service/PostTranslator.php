@@ -19,6 +19,8 @@ final class PostTranslator
 
     public function translatePost(int $originalPostId, string $targetLang, string $sourceLang = 'en'): bool
     {
+        $existingTranslatedPostId = $this->postRelationRepository->getTranslatedPostId($originalPostId, $targetLang);
+
         $post = get_post($originalPostId);
 
         if (! $post instanceof \WP_Post) {
@@ -30,6 +32,30 @@ final class PostTranslator
         $translatedContent = $this->blockProcessor->reassembleBlocks((string) $post->post_content, $translatedStrings);
 
         $translatedTitle = $this->translateTitle((string) $post->post_title, $targetLang, $sourceLang);
+
+        if ($existingTranslatedPostId !== null) {
+            $updatedPostId = wp_update_post(
+                [
+                    'ID' => $existingTranslatedPostId,
+                    'post_content' => $translatedContent,
+                    'post_title' => $translatedTitle,
+                ],
+                true
+            );
+
+            if (is_wp_error($updatedPostId)) {
+                return false;
+            }
+
+            if (! is_int($updatedPostId) || $updatedPostId <= 0) {
+                return false;
+            }
+
+            update_post_meta($existingTranslatedPostId, '_deepl_language_code', $targetLang);
+            update_post_meta($existingTranslatedPostId, '_deepl_original_post_id', $originalPostId);
+
+            return true;
+        }
 
         $translatedPostId = wp_insert_post(
             [
