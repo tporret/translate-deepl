@@ -39,13 +39,18 @@ final class Sweeper
             return;
         }
 
+        $queuedCount = 0;
+
         foreach ($activeLanguages as $langCode) {
             $postIds = $this->getUntranslatedPostIdsForLanguage($langCode);
 
             foreach ($postIds as $postId) {
                 $this->jobManager->schedulePostTranslation((int) $postId, $langCode);
+                $queuedCount++;
             }
         }
+
+        $this->logSweepRun($queuedCount, $activeLanguages);
     }
 
     public function syncSchedule(): void
@@ -116,5 +121,28 @@ final class Sweeper
     private function getRelationsTableName(): string
     {
         return sprintf('%sdeepl_post_relations', $this->wpdb->prefix);
+    }
+
+    /**
+     * @param array<int, string> $languages
+     */
+    private function logSweepRun(int $postsQueued, array $languages): void
+    {
+        $currentLogs = get_option('deepl_sweeper_logs', []);
+
+        if (! is_array($currentLogs)) {
+            $currentLogs = [];
+        }
+
+        $newEntry = [
+            'timestamp' => time(),
+            'queued_count' => $postsQueued,
+            'languages' => array_values($languages),
+        ];
+
+        array_unshift($currentLogs, $newEntry);
+        $currentLogs = array_slice($currentLogs, 0, 20);
+
+        update_option('deepl_sweeper_logs', $currentLogs);
     }
 }

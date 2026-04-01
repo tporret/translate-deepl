@@ -276,6 +276,105 @@ final class SettingsPage
         do_settings_sections(self::PAGE_SLUG);
         submit_button('Save Settings');
         echo '</form>';
+        $this->renderSweeperDashboard();
         echo '</div>';
+    }
+
+    private function renderSweeperDashboard(): void
+    {
+        $logs = get_option('deepl_sweeper_logs', []);
+
+        if (! is_array($logs)) {
+            $logs = [];
+        }
+
+        $sweeperEnabled = (bool) get_option('deepl_sweeper_enabled', false);
+        $sweeperTime = (string) get_option('deepl_sweeper_time', '11:00');
+        $nextRun = $this->getNextSweeperRunTimestamp();
+
+        echo '<hr style="margin: 28px 0;" />';
+        echo '<h2>Sweeper Dashboard</h2>';
+
+        echo '<table class="widefat striped" style="max-width: 900px; margin-bottom: 16px;">';
+        echo '<tbody>';
+
+        printf(
+            '<tr><th style="width: 220px;">Sweeper Enabled</th><td>%s</td></tr>',
+            esc_html($sweeperEnabled ? 'Yes' : 'No')
+        );
+
+        printf(
+            '<tr><th>Configured Sweep Time</th><td>%s</td></tr>',
+            esc_html($sweeperTime)
+        );
+
+        printf(
+            '<tr><th>Next Scheduled Run</th><td>%s</td></tr>',
+            esc_html($nextRun)
+        );
+
+        printf(
+            '<tr><th>Stored Log Entries</th><td>%d</td></tr>',
+            count($logs)
+        );
+
+        echo '</tbody>';
+        echo '</table>';
+
+        echo '<h3>Recent Sweeper Runs (Last 20)</h3>';
+
+        if ($logs === []) {
+            echo '<p>No sweeper runs logged yet.</p>';
+            return;
+        }
+
+        echo '<table class="widefat striped" style="max-width: 900px;">';
+        echo '<thead><tr>';
+        echo '<th style="width: 260px;">Run Time</th>';
+        echo '<th style="width: 180px;">Queued Items</th>';
+        echo '<th>Languages</th>';
+        echo '</tr></thead>';
+        echo '<tbody>';
+
+        foreach ($logs as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            $timestamp = isset($entry['timestamp']) ? (int) $entry['timestamp'] : 0;
+            $queuedCount = isset($entry['queued_count']) ? (int) $entry['queued_count'] : 0;
+            $languages = isset($entry['languages']) && is_array($entry['languages'])
+                ? array_values(array_map(static fn ($code): string => strtoupper((string) $code), $entry['languages']))
+                : [];
+
+            $runTime = $timestamp > 0
+                ? wp_date('Y-m-d H:i:s', $timestamp) . ' (' . wp_timezone_string() . ')'
+                : 'Unknown';
+
+            printf(
+                '<tr><td>%1$s</td><td>%2$d</td><td>%3$s</td></tr>',
+                esc_html($runTime),
+                $queuedCount,
+                esc_html($languages !== [] ? implode(', ', $languages) : 'None')
+            );
+        }
+
+        echo '</tbody>';
+        echo '</table>';
+    }
+
+    private function getNextSweeperRunTimestamp(): string
+    {
+        if (! function_exists('as_next_scheduled_action')) {
+            return 'Action Scheduler not available';
+        }
+
+        $next = as_next_scheduled_action('deepl_daily_sweeper_job', [], 'translate-deepl');
+
+        if ($next === false) {
+            return 'Not scheduled';
+        }
+
+        return wp_date('Y-m-d H:i:s', (int) $next) . ' (' . wp_timezone_string() . ')';
     }
 }
