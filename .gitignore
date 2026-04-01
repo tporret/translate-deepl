@@ -5,6 +5,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+docs/
 
 # Logs and runtime files
 *.log

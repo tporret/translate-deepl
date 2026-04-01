@@ -15,6 +15,7 @@ use TranslateDeepL\Api\DeepLApiClient;
 use TranslateDeepL\Core\Container;
 use TranslateDeepL\Database\Installer;
 use TranslateDeepL\Queue\JobManager;
+use TranslateDeepL\Queue\Sweeper;
 use TranslateDeepL\Repository\PostRelationRepository;
 use TranslateDeepL\Repository\TranslationMemoryRepository;
 use TranslateDeepL\Repository\SettingsRepository;
@@ -123,6 +124,15 @@ final class Plugin
         );
 
         $this->container->singleton(
+            Sweeper::class,
+            static fn (Container $container): Sweeper => new Sweeper(
+                $container->get(\wpdb::class),
+                $container->get(SettingsRepository::class),
+                $container->get(JobManager::class)
+            )
+        );
+
+        $this->container->singleton(
             SettingsPage::class,
             static fn (): SettingsPage => new SettingsPage()
         );
@@ -168,6 +178,7 @@ final class Plugin
     public function onPluginsLoaded(): void
     {
         $this->container->get(JobManager::class)->registerHooks();
+        $this->container->get(Sweeper::class)->registerHooks();
         $this->container->get(SettingsPage::class)->registerHooks();
         $this->container->get(PostMetaBox::class)->registerHooks();
         $this->container->get(TranslatedContentAdmin::class)->registerHooks();

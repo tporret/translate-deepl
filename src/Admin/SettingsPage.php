@@ -61,6 +61,26 @@ final class SettingsPage
             ]
         );
 
+        register_setting(
+            self::SETTINGS_GROUP,
+            'deepl_sweeper_enabled',
+            [
+                'type' => 'boolean',
+                'sanitize_callback' => [$this, 'sanitizeSweeperEnabled'],
+                'default' => false,
+            ]
+        );
+
+        register_setting(
+            self::SETTINGS_GROUP,
+            'deepl_sweeper_time',
+            [
+                'type' => 'string',
+                'sanitize_callback' => [$this, 'sanitizeSweeperTime'],
+                'default' => '11:00',
+            ]
+        );
+
         add_settings_section(
             self::SECTION_ID,
             'DeepL Settings',
@@ -80,6 +100,22 @@ final class SettingsPage
             'deepl_active_languages',
             'Active Languages',
             [$this, 'renderLanguagesField'],
+            self::PAGE_SLUG,
+            self::SECTION_ID
+        );
+
+        add_settings_field(
+            'deepl_sweeper_enabled',
+            'Daily Sweep',
+            [$this, 'renderSweeperEnabledField'],
+            self::PAGE_SLUG,
+            self::SECTION_ID
+        );
+
+        add_settings_field(
+            'deepl_sweeper_time',
+            'Sweep Time',
+            [$this, 'renderSweeperTimeField'],
             self::PAGE_SLUG,
             self::SECTION_ID
         );
@@ -116,9 +152,63 @@ final class SettingsPage
         return array_values(array_unique($sanitized));
     }
 
+    public function sanitizeSweeperEnabled(mixed $enabled): bool
+    {
+        if (is_bool($enabled)) {
+            return $enabled;
+        }
+
+        if (is_int($enabled)) {
+            return $enabled === 1;
+        }
+
+        if (is_string($enabled)) {
+            return in_array(strtolower($enabled), ['1', 'true', 'on', 'yes'], true);
+        }
+
+        return false;
+    }
+
+    public function sanitizeSweeperTime(string $time): string
+    {
+        $value = trim($time);
+
+        if (preg_match('/^(?:[01]\\d|2[0-3]):[0-5]\\d$/', $value) !== 1) {
+            return '11:00';
+        }
+
+        return $value;
+    }
+
     public function renderSectionDescription(): void
     {
+        $wordpressNow = wp_date('Y-m-d H:i:s');
+        $wordpressTimezone = wp_timezone_string();
+        $serverNow = date('Y-m-d H:i:s');
+        $serverTimezone = date_default_timezone_get();
+        $configuredTimezone = (string) get_option('timezone_string', '');
+
         echo '<p>Configure your DeepL API credentials and target languages for automatic translations.</p>';
+
+        printf(
+            '<p><strong>Current WordPress time:</strong> %1$s (%2$s)</p>',
+            esc_html($wordpressNow),
+            esc_html($wordpressTimezone)
+        );
+
+        printf(
+            '<p><strong>Current server time:</strong> %1$s (%2$s)</p>',
+            esc_html($serverNow),
+            esc_html($serverTimezone)
+        );
+
+        if ($configuredTimezone === '') {
+            echo '<div class="notice notice-warning inline"><p>Your WordPress timezone is not set to a named city (Settings > General). Daily sweep timing may be inaccurate around DST changes.</p></div>';
+        }
+
+        if ($wordpressTimezone !== $serverTimezone) {
+            echo '<div class="notice notice-warning inline"><p>WordPress timezone and server timezone differ. The sweeper uses WordPress time shown above. Verify this before setting a daily sweep time.</p></div>';
+        }
     }
 
     public function renderApiKeyField(): void
@@ -147,6 +237,30 @@ final class SettingsPage
                 esc_html($label)
             );
         }
+    }
+
+    public function renderSweeperEnabledField(): void
+    {
+        $enabled = get_option('deepl_sweeper_enabled', false);
+
+        printf(
+            '<label><input type="checkbox" id="deepl_sweeper_enabled" name="deepl_sweeper_enabled" value="1" %s /> Enable Daily Auto-Translation Sweep</label>',
+            checked((bool) $enabled, true, false)
+        );
+    }
+
+    public function renderSweeperTimeField(): void
+    {
+        $time = (string) get_option('deepl_sweeper_time', '11:00');
+
+        if (preg_match('/^(?:[01]\\d|2[0-3]):[0-5]\\d$/', $time) !== 1) {
+            $time = '11:00';
+        }
+
+        printf(
+            '<input type="time" id="deepl_sweeper_time" name="deepl_sweeper_time" value="%s" step="60" />',
+            esc_attr($time)
+        );
     }
 
     public function render(): void
