@@ -81,12 +81,15 @@ final class Sweeper
         $query = $this->wpdb->prepare(
             "SELECT posts.ID
             FROM {$postsTable} posts
-            LEFT JOIN {$relationsTable} rel
-                ON rel.original_post_id = posts.ID
-               AND rel.language_code = %s
+                        LEFT JOIN {$relationsTable} rel_by_language
+                                ON rel_by_language.original_post_id = posts.ID
+                             AND rel_by_language.language_code = %s
+                        LEFT JOIN {$relationsTable} rel_as_translated
+                                ON rel_as_translated.translated_post_id = posts.ID
             WHERE posts.post_status = 'publish'
               AND posts.post_type IN ('post', 'page')
-              AND rel.id IS NULL",
+                            AND rel_by_language.id IS NULL
+                            AND rel_as_translated.id IS NULL",
             $langCode
         );
 
