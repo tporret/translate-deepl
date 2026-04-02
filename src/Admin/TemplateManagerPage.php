@@ -14,8 +14,6 @@ use TranslateDeepL\Queue\JobManager;
 final class TemplateManagerPage
 {
     private const PAGE_SLUG = 'translate-deepl-templates';
-    private const SHARED_TRANSLATION_ACTION = 'deepl_trigger_translation';
-    private const SHARED_TRANSLATION_NONCE_ACTION = 'deepl_trigger_translation';
     private const FSE_TRANSLATION_ACTION = 'deepl_trigger_fse_translation';
     private const FSE_TRANSLATION_NONCE_ACTION = 'deepl_trigger_fse_translation';
     private const CREATE_COPY_ACTION = 'deepl_create_template_copy';
@@ -133,10 +131,10 @@ final class TemplateManagerPage
                 if ($translatedId !== null) {
                     $syncUrl = add_query_arg(
                         [
-                            'action' => self::SHARED_TRANSLATION_ACTION,
+                            'action' => self::FSE_TRANSLATION_ACTION,
                             'post_id' => (string) $templateId,
                             'lang' => $languageCode,
-                            '_wpnonce' => wp_create_nonce(self::SHARED_TRANSLATION_NONCE_ACTION),
+                            '_wpnonce' => wp_create_nonce(self::FSE_TRANSLATION_NONCE_ACTION),
                         ],
                         admin_url('admin-post.php')
                     );
@@ -384,6 +382,13 @@ final class TemplateManagerPage
             $post = get_post((int) get_the_ID());
 
             if (! $post instanceof \WP_Post) {
+                continue;
+            }
+
+            $originalPostId = $this->postRelationRepository->getOriginalPostId((int) $post->ID);
+
+            // Only display source templates in the manager table.
+            if ($originalPostId !== null) {
                 continue;
             }
 

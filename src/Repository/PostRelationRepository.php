@@ -121,6 +121,23 @@ final class PostRelationRepository
         return (int) $value;
     }
 
+    /**
+     * @return array<int>
+     */
+    public function getAllTranslatedPostIds(): array
+    {
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Table name cannot be passed as a placeholder.
+        $query = sprintf(
+            'SELECT DISTINCT translated_post_id FROM %s',
+            $this->getTableName()
+        );
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- Query is prepared immediately above.
+        $results = (array) $this->wpdb->get_col($query);
+
+        return array_map(static fn($id) => (int) $id, $results);
+    }
+
     private function getTableName(): string
     {
         return sprintf('%sdeepl_post_relations', $this->wpdb->prefix);

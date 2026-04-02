@@ -28,6 +28,9 @@ final class LanguageRouter
         add_filter('get_pages', [$this, 'filterPagesByLanguage'], 10, 2);
         add_filter('wp_nav_menu_objects', [$this, 'filterNavMenuObjects'], 10, 2);
         add_filter('nav_menu_link_attributes', [$this, 'filterNavMenuLinkAttributes'], 10, 4);
+        add_action('pre_get_posts', [$this, 'filterMainQuery']);
+        add_filter('get_next_post_where', [$this, 'filterPostNavigationWhere'], 10, 5);
+        add_filter('get_previous_post_where', [$this, 'filterPostNavigationWhere'], 10, 5);
     }
 
     public function registerRewriteRules(): void
@@ -340,6 +343,91 @@ final class LanguageRouter
         }
 
         return $filtered;
+    }
+
+    public function filterMainQuery(\WP_Query $query): void
+    {
+        // Only filter frontend queries, not admin or other contexts
+        if (is_admin()) {
+            return;
+        }
+
+        $currentLanguage = $this->getCurrentLanguage();
+
+        // If on default language, exclude all translated posts
+        if ($currentLanguage === null) {
+            $translatedPostIds = $this->postRelationRepository->getAllTranslatedPostIds();
+            if (! empty($translatedPostIds)) {
+                $query->query_vars['post__not_in'] = $translatedPostIds;
+            }
+            return;
+        }
+
+        // On language routes, only show posts translated for that specific language
+        $translatedPostIds = $this->postRelationRepository->getAllTranslatedPostIds();
+
+        if (empty($translatedPostIds)) {
+            // No translations at all, show nothing on language routes
+            $query->query_vars['post__in'] = [];
+            return;
+        }
+
+        // Get only the posts that are translations for the current language
+        $postsForCurrentLanguage = [];
+
+        foreach ($translatedPostIds as $translatedId) {
+            $translatedLang = $this->postRelationRepository->getLanguageCodeByTranslatedPostId($translatedId);
+
+            // Only include translations for the current language
+            if ($translatedLang === $currentLanguage) {
+                $postsForCurrentLanguage[] = $translatedId;
+            }
+        }
+
+        // Restrict query to only posts translated for this language
+        if (! empty($postsForCurrentLanguage)) {
+            $query->query_vars['post__in'] = $postsForCurrentLanguage;
+        } else {
+            // No translations for this language, show nothing
+            $query->query_vars['post__in'] = [];
+        }
+    }
+
+    public function filterPostNavigationWhere(string $where, bool $inSameTerm, string $excludedTerms, string $taxonomy, \WP_Post $post): string
+    {
+        $currentLanguage = $this->getCurrentLanguage();
+        $translatedPostIds = $this->postRelationRepository->getAllTranslatedPostIds();
+
+        if (empty($translatedPostIds)) {
+            return $where;
+        }
+
+        // If on default language, exclude all translated posts
+        if ($currentLanguage === null) {
+            $excludeList = implode(',', array_map('intval', $translatedPostIds));
+            return $where . " AND p.ID NOT IN ({$excludeList})";
+        }
+
+        // On language routes, only show posts translated for that specific language
+        $postsForCurrentLanguage = [];
+
+        foreach ($translatedPostIds as $translatedId) {
+            $translatedLang = $this->postRelationRepository->getLanguageCodeByTranslatedPostId($translatedId);
+
+            // Only include translations for the current language
+            if ($translatedLang === $currentLanguage) {
+                $postsForCurrentLanguage[] = $translatedId;
+            }
+        }
+
+        if (empty($postsForCurrentLanguage)) {
+            // No translations for this language, exclude everything from navigation
+            return $where . " AND p.ID = 0";
+        }
+
+        // Restrict to only posts in the current language
+        $includeList = implode(',', array_map('intval', $postsForCurrentLanguage));
+        return $where . " AND p.ID IN ({$includeList})";
     }
 
     private function getCurrentLanguage(): ?string

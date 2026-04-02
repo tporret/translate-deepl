@@ -27,9 +27,15 @@ final class PostTranslator
             return false;
         }
 
-        $sourceStrings = $this->blockProcessor->extractTranslatableStrings((string) $post->post_content);
+        $sourceContent = (string) $post->post_content;
+
+        if (in_array((string) $post->post_type, ['wp_template', 'wp_template_part'], true)) {
+            $sourceContent = $this->expandPatternsInContent($sourceContent);
+        }
+
+        $sourceStrings = $this->blockProcessor->extractTranslatableStrings($sourceContent);
         $translatedStrings = $this->translateStringsWithMemory($sourceStrings, $targetLang, $sourceLang);
-        $translatedContent = $this->blockProcessor->reassembleBlocks((string) $post->post_content, $translatedStrings);
+        $translatedContent = $this->blockProcessor->reassembleBlocks($sourceContent, $translatedStrings);
 
         $translatedTitle = $this->translateTitle((string) $post->post_title, $targetLang, $sourceLang);
 
@@ -175,5 +181,86 @@ final class PostTranslator
         }
 
         return $translated[0];
+    }
+
+    private function expandPatternsInContent(string $content): string
+    {
+        if (! class_exists('WP_Block_Patterns_Registry')) {
+            return $content;
+        }
+
+        $blocks = parse_blocks($content);
+        $expandedBlocks = $this->expandPatternBlocks($blocks);
+
+        return serialize_blocks($expandedBlocks);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $blocks
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function expandPatternBlocks(array $blocks): array
+    {
+        $expanded = [];
+
+        foreach ($blocks as $block) {
+            if (! is_array($block)) {
+                continue;
+            }
+
+            $blockName = isset($block['blockName']) && is_string($block['blockName'])
+                ? $block['blockName']
+                : '';
+
+            if ($blockName === 'core/pattern') {
+                $patternBlocks = $this->resolvePatternBlocks($block);
+
+                if ($patternBlocks !== []) {
+                    foreach ($patternBlocks as $patternBlock) {
+                        $expanded[] = $patternBlock;
+                    }
+
+                    continue;
+                }
+            }
+
+            if (isset($block['innerBlocks']) && is_array($block['innerBlocks'])) {
+                $block['innerBlocks'] = $this->expandPatternBlocks($block['innerBlocks']);
+            }
+
+            $expanded[] = $block;
+        }
+
+        return $expanded;
+    }
+
+    /**
+     * @param array<string, mixed> $block
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolvePatternBlocks(array $block): array
+    {
+        if (! isset($block['attrs']) || ! is_array($block['attrs'])) {
+            return [];
+        }
+
+        $slug = isset($block['attrs']['slug']) ? (string) $block['attrs']['slug'] : '';
+
+        if ($slug === '') {
+            return [];
+        }
+
+        $registry = \WP_Block_Patterns_Registry::get_instance();
+        $pattern = $registry->get_registered($slug);
+
+        if (! is_array($pattern) || ! isset($pattern['content']) || ! is_string($pattern['content'])) {
+            return [];
+        }
+
+        $patternBlocks = parse_blocks($pattern['content']);
+
+        return $this->expandPatternBlocks($patternBlocks);
     }
 }
