@@ -16,6 +16,8 @@ final class TranslatedContentAdmin
         add_filter('map_meta_cap', [$this, 'blockTranslatedPostEditing'], 10, 4);
         add_filter('post_row_actions', [$this, 'filterRowActions'], 10, 2);
         add_filter('page_row_actions', [$this, 'filterRowActions'], 10, 2);
+        add_filter('rest_wp_template_query', [$this, 'excludeTranslatedFromRestQuery'], 10, 2);
+        add_filter('rest_wp_template_part_query', [$this, 'excludeTranslatedFromRestQuery'], 10, 2);
         add_filter('views_edit-post', [$this, 'addSetViews']);
         add_filter('views_edit-page', [$this, 'addSetViews']);
         add_filter('manage_post_posts_columns', [$this, 'addLanguageColumn']);
@@ -230,6 +232,31 @@ final class TranslatedContentAdmin
         $columns['deepl_language'] = 'deepl_language';
 
         return $columns;
+    }
+
+    /**
+     * @param array<string, mixed> $args
+     *
+     * @return array<string, mixed>
+     */
+    public function excludeTranslatedFromRestQuery(array $args, \WP_REST_Request $request): array
+    {
+        $metaQuery = isset($args['meta_query']) && is_array($args['meta_query'])
+            ? $args['meta_query']
+            : [];
+
+        $metaQuery[] = [
+            'key'     => '_deepl_original_post_id',
+            'compare' => 'NOT EXISTS',
+        ];
+
+        if (count($metaQuery) > 1 && ! isset($metaQuery['relation'])) {
+            $metaQuery['relation'] = 'AND';
+        }
+
+        $args['meta_query'] = $metaQuery;
+
+        return $args;
     }
 
     private function isTranslatedPost(int $postId): bool

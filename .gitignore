@@ -6,6 +6,7 @@ Thumbs.db
 *.swp
 *.swo
 docs/
+.github/
 
 # Logs and runtime files
 *.log

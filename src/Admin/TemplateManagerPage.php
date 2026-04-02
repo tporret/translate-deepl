@@ -20,6 +20,11 @@ final class TemplateManagerPage
     private const CREATE_COPY_NONCE_ACTION = 'deepl_create_template_copy';
 
     /**
+     * @var array<string, bool>|null
+     */
+    private ?array $currentThemeTemplateKeys = null;
+
+    /**
      * @var array<string, string>
      */
     private array $languageLabels = [
@@ -220,6 +225,19 @@ final class TemplateManagerPage
             ? $templateFromTheme->content
             : '';
 
+        $taxInput = [
+            'wp_theme' => [get_stylesheet()],
+        ];
+
+        if (
+            $templateType === 'wp_template_part'
+            && isset($templateFromTheme->area)
+            && is_string($templateFromTheme->area)
+            && $templateFromTheme->area !== ''
+        ) {
+            $taxInput['wp_template_part_area'] = [$templateFromTheme->area];
+        }
+
         $newTemplateId = wp_insert_post(
             [
                 'post_type' => $templateType,
@@ -227,6 +245,7 @@ final class TemplateManagerPage
                 'post_title' => $templateTitle,
                 'post_status' => 'publish',
                 'post_content' => $templateContent,
+                'tax_input' => $taxInput,
             ],
             true
         );
@@ -248,6 +267,30 @@ final class TemplateManagerPage
 
         $postId = isset($_GET['post_id']) ? (int) $_GET['post_id'] : 0;
         $languageCode = isset($_GET['lang']) ? sanitize_key((string) $_GET['lang']) : '';
+
+        $post = $postId > 0 ? get_post($postId) : null;
+
+        if (! $post instanceof \WP_Post) {
+            $this->redirectWithStatus('invalid_template');
+        }
+
+        $postType = (string) $post->post_type;
+
+        if (! in_array($postType, ['wp_template', 'wp_template_part'], true)) {
+            $this->redirectWithStatus('invalid_template');
+        }
+
+        $isSourcePost = $this->postRelationRepository->getOriginalPostId($postId) === null;
+
+        if (! $isSourcePost) {
+            $this->redirectWithStatus('invalid_template');
+        }
+
+        $isCurrentThemeTemplate = $this->isCurrentThemeTemplatePost($post);
+
+        if (! $isCurrentThemeTemplate) {
+            $this->redirectWithStatus('invalid_template');
+        }
 
         if ($postId > 0 && $languageCode !== '') {
             $this->jobManager->schedulePostTranslation($postId, $languageCode);
@@ -324,16 +367,28 @@ final class TemplateManagerPage
             'post_type' => $postType,
             'name' => $postName,
             'post_status' => ['publish', 'draft', 'auto-draft', 'private'],
-            'posts_per_page' => 1,
+            'posts_per_page' => -1,
             'no_found_rows' => true,
             'fields' => 'ids',
         ]);
 
-        if (! is_array($query->posts) || ! isset($query->posts[0])) {
+        if (! is_array($query->posts) || $query->posts === []) {
             return null;
         }
 
-        return (int) $query->posts[0];
+        foreach ($query->posts as $postId) {
+            $post = get_post((int) $postId);
+
+            if (! $post instanceof \WP_Post) {
+                continue;
+            }
+
+            if ($this->isCurrentThemeTemplatePost($post)) {
+                return (int) $post->ID;
+            }
+        }
+
+        return null;
     }
 
     private function findThemeTemplate(string $templateType, string $templateSlug): ?object
@@ -385,6 +440,10 @@ final class TemplateManagerPage
                 continue;
             }
 
+            if (! $this->isCurrentThemeTemplatePost($post)) {
+                continue;
+            }
+
             $originalPostId = $this->postRelationRepository->getOriginalPostId((int) $post->ID);
 
             // Only display source templates in the manager table.
@@ -431,6 +490,10 @@ final class TemplateManagerPage
                 continue;
             }
 
+            if ($source !== 'theme') {
+                continue;
+            }
+
             $key = $type . ':' . $slug;
 
             if (isset($indexByTypeAndSlug[$key])) {
@@ -462,5 +525,74 @@ final class TemplateManagerPage
         );
 
         return $templates;
+    }
+
+    private function isCurrentThemeTemplatePost(\WP_Post $post): bool
+    {
+        $themeTerms = wp_get_object_terms((int) $post->ID, 'wp_theme', ['fields' => 'slugs']);
+
+        if (is_wp_error($themeTerms)) {
+            return false;
+        }
+
+        if (is_array($themeTerms) && $themeTerms !== []) {
+            return in_array(get_stylesheet(), $themeTerms, true);
+        }
+
+        return $this->isCurrentThemeTemplateSlug((string) $post->post_type, (string) $post->post_name);
+    }
+
+    private function isCurrentThemeTemplateSlug(string $templateType, string $templateSlug): bool
+    {
+        if ($templateType === '' || $templateSlug === '') {
+            return false;
+        }
+
+        $keys = $this->getCurrentThemeTemplateKeys();
+
+        return isset($keys[$templateType . ':' . $templateSlug]);
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function getCurrentThemeTemplateKeys(): array
+    {
+        if ($this->currentThemeTemplateKeys !== null) {
+            return $this->currentThemeTemplateKeys;
+        }
+
+        $keys = [];
+
+        if (! function_exists('get_block_templates')) {
+            $this->currentThemeTemplateKeys = $keys;
+
+            return $keys;
+        }
+
+        $templates = array_merge(
+            get_block_templates([], 'wp_template'),
+            get_block_templates([], 'wp_template_part')
+        );
+
+        foreach ($templates as $template) {
+            if (! is_object($template)) {
+                continue;
+            }
+
+            $slug = isset($template->slug) ? (string) $template->slug : '';
+            $type = isset($template->type) ? (string) $template->type : '';
+            $source = isset($template->source) ? (string) $template->source : '';
+
+            if ($slug === '' || $type === '' || $source !== 'theme') {
+                continue;
+            }
+
+            $keys[$type . ':' . $slug] = true;
+        }
+
+        $this->currentThemeTemplateKeys = $keys;
+
+        return $keys;
     }
 }

@@ -60,6 +60,8 @@ final class PostTranslator
             update_post_meta($existingTranslatedPostId, '_deepl_language_code', $targetLang);
             update_post_meta($existingTranslatedPostId, '_deepl_original_post_id', $originalPostId);
 
+            $this->inheritFseTerms($post, $existingTranslatedPostId);
+
             return true;
         }
 
@@ -83,6 +85,8 @@ final class PostTranslator
 
         update_post_meta($translatedPostId, '_deepl_language_code', $targetLang);
         update_post_meta($translatedPostId, '_deepl_original_post_id', $originalPostId);
+
+        $this->inheritFseTerms($post, $translatedPostId);
 
         return $this->postRelationRepository->saveRelation($originalPostId, $translatedPostId, $targetLang);
     }
@@ -181,6 +185,32 @@ final class PostTranslator
         }
 
         return $translated[0];
+    }
+
+    private function inheritFseTerms(\WP_Post $sourcePost, int $targetPostId): void
+    {
+        if (! in_array((string) $sourcePost->post_type, ['wp_template', 'wp_template_part'], true)) {
+            return;
+        }
+
+        if (taxonomy_exists('wp_theme')) {
+            $themeTerms = wp_get_object_terms((int) $sourcePost->ID, 'wp_theme', ['fields' => 'slugs']);
+
+            if (! is_wp_error($themeTerms) && is_array($themeTerms) && $themeTerms !== []) {
+                wp_set_object_terms($targetPostId, $themeTerms, 'wp_theme', false);
+            }
+        }
+
+        if (
+            (string) $sourcePost->post_type === 'wp_template_part'
+            && taxonomy_exists('wp_template_part_area')
+        ) {
+            $areaTerms = wp_get_object_terms((int) $sourcePost->ID, 'wp_template_part_area', ['fields' => 'slugs']);
+
+            if (! is_wp_error($areaTerms) && is_array($areaTerms) && $areaTerms !== []) {
+                wp_set_object_terms($targetPostId, $areaTerms, 'wp_template_part_area', false);
+            }
+        }
     }
 
     private function expandPatternsInContent(string $content): string
