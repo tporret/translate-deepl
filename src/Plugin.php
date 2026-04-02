@@ -20,6 +20,7 @@ use TranslateDeepL\Queue\Sweeper;
 use TranslateDeepL\Repository\PostRelationRepository;
 use TranslateDeepL\Repository\TranslationMemoryRepository;
 use TranslateDeepL\Repository\SettingsRepository;
+use TranslateDeepL\Frontend\TemplateResolver;
 use TranslateDeepL\Routing\LanguageRouter;
 use TranslateDeepL\Service\BlockProcessor;
 use TranslateDeepL\Service\PostTranslator;
@@ -179,6 +180,14 @@ final class Plugin
                 $container->get(PostRelationRepository::class)
             )
         );
+
+        $this->container->singleton(
+            TemplateResolver::class,
+            static fn (Container $container): TemplateResolver => new TemplateResolver(
+                $container->get(\wpdb::class),
+                $container->get(PostRelationRepository::class)
+            )
+        );
     }
 
     private function resolveWpdb(): \wpdb
@@ -207,5 +216,6 @@ final class Plugin
         $this->container->get(PostMetaBox::class)->registerHooks();
         $this->container->get(TranslatedContentAdmin::class)->registerHooks();
         $this->container->get(LanguageRouter::class)->registerHooks();
+        $this->container->get(TemplateResolver::class)->registerHooks();
     }
 }
