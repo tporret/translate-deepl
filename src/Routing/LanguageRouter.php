@@ -23,8 +23,14 @@ final class LanguageRouter
         add_action('parse_request', [$this, 'parseLanguageRequest']);
         add_filter('query_vars', [$this, 'registerQueryVars']);
         add_filter('request', [$this, 'resolveRequest']);
+        add_filter('home_url', [$this, 'filterHomeUrl'], 10, 4);
         add_filter('post_link', [$this, 'filterPostLink'], 10, 3);
         add_filter('page_link', [$this, 'filterPageLink'], 10, 3);
+        add_filter('term_link', [$this, 'filterTermLink'], 10, 3);
+        add_filter('author_link', [$this, 'filterAuthorLink'], 10, 3);
+        add_filter('year_link', [$this, 'filterYearLink'], 10, 2);
+        add_filter('month_link', [$this, 'filterMonthLink'], 10, 3);
+        add_filter('day_link', [$this, 'filterDayLink'], 10, 4);
         add_filter('get_pages', [$this, 'filterPagesByLanguage'], 10, 2);
         add_filter('wp_nav_menu_objects', [$this, 'filterNavMenuObjects'], 10, 2);
         add_filter('nav_menu_link_attributes', [$this, 'filterNavMenuLinkAttributes'], 10, 4);
@@ -39,6 +45,11 @@ final class LanguageRouter
         add_rewrite_rule(
             '^([a-z]{2})/?$',
             'index.php?' . self::QUERY_VAR . '=$matches[1]',
+            'top'
+        );
+        add_rewrite_rule(
+            '^([a-z]{2})/page/([0-9]+)/?$',
+            'index.php?paged=$matches[2]&' . self::QUERY_VAR . '=$matches[1]',
             'top'
         );
         add_rewrite_rule(
@@ -70,6 +81,7 @@ final class LanguageRouter
         if (
             isset($queryVars[self::QUERY_VAR])
             && ! isset($queryVars['name'], $queryVars['pagename'], $queryVars['p'], $queryVars['page_id'])
+            && ! $this->hasArchiveQueryVars($queryVars)
         ) {
             $langCode = sanitize_key((string) $queryVars[self::QUERY_VAR]);
 
@@ -185,6 +197,78 @@ final class LanguageRouter
         }
 
         return $this->buildLanguageUrl($langCode, (string) $post->post_name);
+    }
+
+    public function filterHomeUrl(string $url, string $path, ?string $origScheme, ?int $blogId): string
+    {
+        $langCode = $this->getCurrentLanguage();
+
+        if ($langCode === null || is_admin()) {
+            return $url;
+        }
+
+        $normalizedPath = trim($path, '/');
+
+        if ($normalizedPath !== '') {
+            return $url;
+        }
+
+        return $this->buildLanguageHomeUrl($langCode);
+    }
+
+    public function filterTermLink(string $termLink, \WP_Term $term, string $taxonomy): string
+    {
+        $langCode = $this->getCurrentLanguage();
+
+        if ($langCode === null) {
+            return $termLink;
+        }
+
+        return $this->prefixUrlWithLanguage($termLink, $langCode);
+    }
+
+    public function filterAuthorLink(string $link, int $authorId, string $authorNicename): string
+    {
+        $langCode = $this->getCurrentLanguage();
+
+        if ($langCode === null) {
+            return $link;
+        }
+
+        return $this->prefixUrlWithLanguage($link, $langCode);
+    }
+
+    public function filterYearLink(string $link, int $year): string
+    {
+        $langCode = $this->getCurrentLanguage();
+
+        if ($langCode === null) {
+            return $link;
+        }
+
+        return $this->prefixUrlWithLanguage($link, $langCode);
+    }
+
+    public function filterMonthLink(string $link, int $year, int $month): string
+    {
+        $langCode = $this->getCurrentLanguage();
+
+        if ($langCode === null) {
+            return $link;
+        }
+
+        return $this->prefixUrlWithLanguage($link, $langCode);
+    }
+
+    public function filterDayLink(string $link, int $year, int $month, int $day): string
+    {
+        $langCode = $this->getCurrentLanguage();
+
+        if ($langCode === null) {
+            return $link;
+        }
+
+        return $this->prefixUrlWithLanguage($link, $langCode);
     }
 
     /**
@@ -347,8 +431,11 @@ final class LanguageRouter
 
     public function filterMainQuery(\WP_Query $query): void
     {
-        // Only filter frontend queries, not admin or other contexts
-        if (is_admin()) {
+        if (is_admin() || ! $query->is_main_query()) {
+            return;
+        }
+
+        if ((int) $query->get('page_id') > 0) {
             return;
         }
 
@@ -446,6 +533,17 @@ final class LanguageRouter
         return home_url('/' . rawurlencode($langCode) . '/' . rawurlencode($slug) . '/');
     }
 
+    private function buildLanguageHomeUrl(string $langCode): string
+    {
+        $home = (string) get_option('home', '');
+
+        if ($home === '') {
+            $home = home_url('/');
+        }
+
+        return trailingslashit(untrailingslashit($home) . '/' . rawurlencode($langCode));
+    }
+
     public function parseLanguageRequest(\WP $wp): void
     {
         $requestUri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
@@ -488,6 +586,14 @@ final class LanguageRouter
             return;
         }
 
+        $archiveQueryVars = $this->resolvePrefixedArchiveQueryVars($path);
+
+        if ($archiveQueryVars !== null) {
+            $this->applyQueryVars($wp, $archiveQueryVars);
+
+            return;
+        }
+
         if (preg_match('/^([a-z]{2})\/([^\/]+)$/', $path, $matches) !== 1) {
             return;
         }
@@ -523,5 +629,154 @@ final class LanguageRouter
 
         $wp->query_vars['p'] = (int) $translatedPostId;
         unset($wp->query_vars['page_id']);
+    }
+
+    /**
+     * @param array<string, mixed> $queryVars
+     */
+    private function hasArchiveQueryVars(array $queryVars): bool
+    {
+        foreach (['category_name', 'tag', 'author_name', 'year', 'monthnum', 'day', 'paged'] as $key) {
+            if (! isset($queryVars[$key])) {
+                continue;
+            }
+
+            $value = $queryVars[$key];
+
+            if (is_scalar($value) && (string) $value !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolvePrefixedArchiveQueryVars(string $path): ?array
+    {
+        if (preg_match('/^([a-z]{2})\/(.+)$/', $path, $matches) !== 1) {
+            return null;
+        }
+
+        $langCode = sanitize_key($matches[1]);
+        $relativePath = trim((string) $matches[2], '/');
+
+        if ($langCode === '' || $relativePath === '' || ! str_contains($relativePath, '/')) {
+            return null;
+        }
+
+        global $wp_rewrite;
+
+        if (! $wp_rewrite instanceof \WP_Rewrite) {
+            return null;
+        }
+
+        $rewriteRules = $wp_rewrite->wp_rewrite_rules();
+
+        if (! is_array($rewriteRules) || $rewriteRules === []) {
+            return null;
+        }
+
+        foreach ($rewriteRules as $match => $query) {
+            if (! is_string($match) || ! is_string($query)) {
+                continue;
+            }
+
+            $regex = '#^' . $match . '#';
+
+            if (preg_match($regex, $relativePath, $ruleMatches) !== 1) {
+                continue;
+            }
+
+            $parsedQuery = preg_replace('!^.+\?!', '', $query);
+
+            if (! is_string($parsedQuery) || $parsedQuery === '') {
+                continue;
+            }
+
+            parse_str(\WP_MatchesMapRegex::apply($parsedQuery, $ruleMatches), $queryVars);
+
+            if (! is_array($queryVars) || $queryVars === []) {
+                continue;
+            }
+
+            if (isset($queryVars['name'], $queryVars['pagename']) || isset($queryVars['p'], $queryVars['page_id'])) {
+                continue;
+            }
+
+            if (! $this->hasArchiveQueryVars($queryVars)) {
+                continue;
+            }
+
+            $queryVars[self::QUERY_VAR] = $langCode;
+
+            return $queryVars;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $queryVars
+     */
+    private function applyQueryVars(\WP $wp, array $queryVars): void
+    {
+        unset(
+            $wp->query_vars['error'],
+            $wp->query_vars['name'],
+            $wp->query_vars['pagename'],
+            $wp->query_vars['p'],
+            $wp->query_vars['page_id']
+        );
+
+        $wp->matched_rule = 'deepl_prefixed_archive';
+        $wp->matched_query = http_build_query($queryVars, '', '&');
+
+        foreach ($queryVars as $key => $value) {
+            $wp->query_vars[$key] = $value;
+        }
+    }
+
+    private function prefixUrlWithLanguage(string $url, string $langCode): string
+    {
+        $path = wp_parse_url($url, PHP_URL_PATH);
+
+        if (! is_string($path) || $path === '') {
+            return $url;
+        }
+
+        $homePath = (string) wp_parse_url(home_url('/'), PHP_URL_PATH);
+        $normalizedHomePath = trim($homePath, '/');
+        $normalizedPath = trim($path, '/');
+
+        if ($normalizedHomePath !== '') {
+            if ($normalizedPath === $normalizedHomePath) {
+                $normalizedPath = '';
+            } elseif (str_starts_with($normalizedPath, $normalizedHomePath . '/')) {
+                $normalizedPath = substr($normalizedPath, strlen($normalizedHomePath) + 1);
+            }
+        }
+
+        if ($normalizedPath === sanitize_key($langCode) || str_starts_with($normalizedPath, sanitize_key($langCode) . '/')) {
+            return $url;
+        }
+
+        $prefixedPath = '/' . trim(sanitize_key($langCode) . '/' . $normalizedPath, '/');
+        $query = wp_parse_url($url, PHP_URL_QUERY);
+        $fragment = wp_parse_url($url, PHP_URL_FRAGMENT);
+
+        $prefixedUrl = home_url($prefixedPath . '/');
+
+        if (is_string($query) && $query !== '') {
+            $prefixedUrl .= '?' . $query;
+        }
+
+        if (is_string($fragment) && $fragment !== '') {
+            $prefixedUrl .= '#' . $fragment;
+        }
+
+        return $prefixedUrl;
     }
 }

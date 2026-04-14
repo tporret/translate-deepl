@@ -39,6 +39,9 @@ final class PostTranslator
             $updatedPostId = wp_update_post(
                 [
                     'ID' => $existingTranslatedPostId,
+                    'post_author' => (int) $post->post_author,
+                    'post_date' => (string) $post->post_date,
+                    'post_date_gmt' => (string) $post->post_date_gmt,
                     'post_content' => $translatedContent,
                     'post_title' => $translatedTitle,
                 ],
@@ -56,13 +59,16 @@ final class PostTranslator
             update_post_meta($existingTranslatedPostId, '_deepl_language_code', $targetLang);
             update_post_meta($existingTranslatedPostId, '_deepl_original_post_id', $originalPostId);
 
-            $this->inheritFseTerms($post, $existingTranslatedPostId);
+            $this->inheritPostTerms($post, $existingTranslatedPostId);
 
             return true;
         }
 
         $translatedPostId = wp_insert_post(
             [
+                'post_author' => (int) $post->post_author,
+                'post_date' => (string) $post->post_date,
+                'post_date_gmt' => (string) $post->post_date_gmt,
                 'post_title' => $translatedTitle,
                 'post_content' => $translatedContent,
                 'post_type' => (string) $post->post_type,
@@ -82,7 +88,7 @@ final class PostTranslator
         update_post_meta($translatedPostId, '_deepl_language_code', $targetLang);
         update_post_meta($translatedPostId, '_deepl_original_post_id', $originalPostId);
 
-        $this->inheritFseTerms($post, $translatedPostId);
+        $this->inheritPostTerms($post, $translatedPostId);
 
         return $this->postRelationRepository->saveRelation($originalPostId, $translatedPostId, $targetLang);
     }
@@ -183,29 +189,26 @@ final class PostTranslator
         return $translated[0];
     }
 
-    private function inheritFseTerms(\WP_Post $sourcePost, int $targetPostId): void
+    private function inheritPostTerms(\WP_Post $sourcePost, int $targetPostId): void
     {
-        if (! in_array((string) $sourcePost->post_type, ['wp_template', 'wp_template_part'], true)) {
+        $taxonomies = get_object_taxonomies((string) $sourcePost->post_type, 'names');
+
+        if (! is_array($taxonomies) || $taxonomies === []) {
             return;
         }
 
-        if (taxonomy_exists('wp_theme')) {
-            $themeTerms = wp_get_object_terms((int) $sourcePost->ID, 'wp_theme', ['fields' => 'slugs']);
-
-            if (! is_wp_error($themeTerms) && is_array($themeTerms) && $themeTerms !== []) {
-                wp_set_object_terms($targetPostId, $themeTerms, 'wp_theme', false);
+        foreach ($taxonomies as $taxonomy) {
+            if (! is_string($taxonomy) || $taxonomy === '' || ! taxonomy_exists($taxonomy)) {
+                continue;
             }
-        }
 
-        if (
-            (string) $sourcePost->post_type === 'wp_template_part'
-            && taxonomy_exists('wp_template_part_area')
-        ) {
-            $areaTerms = wp_get_object_terms((int) $sourcePost->ID, 'wp_template_part_area', ['fields' => 'slugs']);
+            $termIds = wp_get_object_terms((int) $sourcePost->ID, $taxonomy, ['fields' => 'ids']);
 
-            if (! is_wp_error($areaTerms) && is_array($areaTerms) && $areaTerms !== []) {
-                wp_set_object_terms($targetPostId, $areaTerms, 'wp_template_part_area', false);
+            if (is_wp_error($termIds) || ! is_array($termIds)) {
+                continue;
             }
+
+            wp_set_object_terms($targetPostId, $termIds, $taxonomy, false);
         }
     }
 
