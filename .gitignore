@@ -7,6 +7,7 @@ Thumbs.db
 *.swo
 docs/
 .github/
+testsite.md
 
 # Logs and runtime files
 *.log

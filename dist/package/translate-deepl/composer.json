@@ -1,0 +1,23 @@
+{
+    "name": "terrencelp/translate-deepl",
+    "description": "High-performance enterprise DeepL integration for WordPress.",
+    "type": "wordpress-plugin",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.0",
+        "psr/container": "^2.0",
+        "woocommerce/action-scheduler": "^3.9"
+    },
+    "autoload": {
+        "psr-4": {
+            "TranslateDeepL\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "TranslateDeepL\\Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
